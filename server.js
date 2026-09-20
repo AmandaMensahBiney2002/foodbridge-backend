@@ -2,9 +2,13 @@
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
+
 const authRoutes = require("./routes/auth");
 const foodListingsRoutes = require("./routes/foodListings");
 const foodRequestsRoutes = require("./routes/foodRequests");
+const contactRoutes = require("./routes/contact");
+const profileRoutes = require("./routes/profile");
+
 const authenticateToken = require("./middleware/authMiddleware");
 
 const app = express();
@@ -21,6 +25,10 @@ app.use(cors());
 app.use("/api/auth", authRoutes);
 app.use("/api/food-listings", foodListingsRoutes);
 app.use("/api/food-requests", foodRequestsRoutes);
+app.use("/api/contact", contactRoutes);
+
+// Public profiles
+app.use("/api/profiles", profileRoutes);
 
 // ======================================================
 // HOME
@@ -45,7 +53,7 @@ app.get("/api/test-protected", authenticateToken, (req, res) => {
 // USER PROFILE
 // ======================================================
 
-// Get the logged-in user's profile
+// Get the logged-in user's own profile
 app.get(
   "/api/profile",
   authenticateToken,
@@ -62,6 +70,12 @@ app.get(
           email,
           phone,
           account_type,
+          profile_photo,
+          display_name,
+          profile_type,
+          bio,
+          location,
+          is_verified,
           created_at
         FROM users
         WHERE id = $1
@@ -75,7 +89,12 @@ app.get(
         });
       }
 
-      res.json(result.rows[0]);
+      const profile = result.rows[0];
+
+      res.json({
+        ...profile,
+        full_name: `${profile.first_name} ${profile.last_name}`
+      });
     } catch (error) {
       console.error(
         "Error fetching profile:",
@@ -100,7 +119,12 @@ app.patch(
       const {
         first_name,
         last_name,
-        phone
+        phone,
+        profile_photo,
+        display_name,
+        profile_type,
+        bio,
+        location
       } = req.body;
 
       // Validate required fields
@@ -115,14 +139,36 @@ app.patch(
         });
       }
 
+      // Validate profile type if supplied
+      const allowedProfileTypes = [
+        "individual",
+        "food_business",
+        "organization"
+      ];
+
+      if (
+        profile_type &&
+        !allowedProfileTypes.includes(profile_type)
+      ) {
+        return res.status(400).json({
+          error:
+            "Profile type must be individual, food_business, or organization"
+        });
+      }
+
       const result = await pool.query(
         `
         UPDATE users
         SET
           first_name = $1,
           last_name = $2,
-          phone = $3
-        WHERE id = $4
+          phone = $3,
+          profile_photo = $4,
+          display_name = $5,
+          profile_type = $6,
+          bio = $7,
+          location = $8
+        WHERE id = $9
         RETURNING
           id,
           first_name,
@@ -130,12 +176,23 @@ app.patch(
           email,
           phone,
           account_type,
+          profile_photo,
+          display_name,
+          profile_type,
+          bio,
+          location,
+          is_verified,
           created_at
         `,
         [
           first_name.trim(),
           last_name.trim(),
           phone ? phone.trim() : null,
+          profile_photo ? profile_photo.trim() : null,
+          display_name ? display_name.trim() : null,
+          profile_type || "individual",
+          bio ? bio.trim() : null,
+          location ? location.trim() : null,
           userId
         ]
       );
@@ -146,9 +203,14 @@ app.patch(
         });
       }
 
+      const profile = result.rows[0];
+
       res.json({
         message: "Profile updated successfully",
-        user: result.rows[0]
+        user: {
+          ...profile,
+          full_name: `${profile.first_name} ${profile.last_name}`
+        }
       });
     } catch (error) {
       console.error(

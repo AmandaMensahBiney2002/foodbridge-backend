@@ -1,3 +1,4 @@
+
 const { DataTypes } = require("sequelize");
 const sequelize = require("../sequelize");
 
@@ -38,6 +39,11 @@ const User = sequelize.define(
     account_type: {
       type: DataTypes.STRING(30),
       allowNull: false,
+    },
+
+    user_type: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
     },
 
     created_at: {
@@ -83,3 +89,4 @@ const User = sequelize.define(
 );
 
 module.exports = User;
+

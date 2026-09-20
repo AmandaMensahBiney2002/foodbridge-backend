@@ -1,4 +1,3 @@
-
 const express = require("express");
 const pool = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
@@ -14,6 +13,7 @@ router.get("/", async (req, res) => {
     const result = await pool.query(`
       SELECT
         food_listings.id,
+        food_listings.donor_id,
         food_listings.food_name,
         food_listings.description,
         food_listings.quantity,
@@ -54,6 +54,7 @@ router.get("/", async (req, res) => {
 
       GROUP BY
         food_listings.id,
+        food_listings.donor_id,
         users.first_name,
         users.last_name
 
@@ -100,6 +101,7 @@ router.get(
         `
         SELECT
           food_listings.id,
+          food_listings.donor_id,
           food_listings.food_name,
           food_listings.description,
           food_listings.quantity,
@@ -135,7 +137,8 @@ router.get(
         WHERE food_listings.donor_id = $1
 
         GROUP BY
-          food_listings.id
+          food_listings.id,
+          food_listings.donor_id
 
         ORDER BY food_listings.created_at DESC
         `,
@@ -538,8 +541,7 @@ router.patch(
         SET status = 'closed'
         WHERE id = $1
         RETURNING *;
-        `
-        ,
+        `,
         [id]
       );
 
@@ -561,4 +563,3 @@ router.patch(
 );
 
 module.exports = router;
-

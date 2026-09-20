@@ -9,7 +9,51 @@ const { sendEmail } = require("../services/emailService");
 const router = express.Router();
 
 
+// ============================================================
+// PASSWORD VALIDATION
+// ============================================================
+
+function validatePassword(password) {
+  if (typeof password !== "string") {
+    return "Password is required";
+  }
+
+  if (password.length < 8) {
+    return "Password must be at least 8 characters long";
+  }
+
+  if (password.length > 128) {
+    return "Password must not exceed 128 characters";
+  }
+
+  if (/\s/.test(password)) {
+    return "Password must not contain spaces";
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter";
+  }
+
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter";
+  }
+
+  if (!/[0-9]/.test(password)) {
+    return "Password must contain at least one number";
+  }
+
+  if (!/[!@#$%^&*]/.test(password)) {
+    return "Password must contain at least one special character";
+  }
+
+  return null;
+}
+
+
+// ============================================================
 // SIGN UP
+// ============================================================
+
 router.post("/signup", async (req, res) => {
   try {
     const {
@@ -18,7 +62,8 @@ router.post("/signup", async (req, res) => {
       email,
       password,
       phone,
-      account_type
+      account_type,
+      user_type
     } = req.body;
 
     // Check required fields
@@ -35,10 +80,40 @@ router.post("/signup", async (req, res) => {
       });
     }
 
+    // ========================================================
+    // PASSWORD POLICY
+    // ========================================================
+
+    const passwordError = validatePassword(password);
+
+    if (passwordError) {
+      return res.status(400).json({
+        error: passwordError
+      });
+    }
+
     // Check account type
+    // This remains donor/recipient because it controls
+    // FoodBridge permissions and authorization.
     if (!["donor", "recipient"].includes(account_type)) {
       return res.status(400).json({
         error: "Account type must be donor or recipient"
+      });
+    }
+
+    // Check user type if provided
+    if (
+      user_type &&
+      ![
+        "individual",
+        "food-business",
+        "organization",
+        "volunteer"
+      ].includes(user_type)
+    ) {
+      return res.status(400).json({
+        error:
+          "User type must be individual, food-business, organization, or volunteer"
       });
     }
 
@@ -153,7 +228,13 @@ router.post("/signup", async (req, res) => {
       email: normalizedEmail,
       password: hashedPassword,
       phone: phone ? phone.trim() : null,
+
+      // Donor/recipient role used by FoodBridge authorization
       account_type,
+
+      // Describes what type of user this is
+      user_type: user_type || null,
+
       created_at: new Date(),
 
       email_verified: false,
@@ -191,7 +272,10 @@ router.post("/signup", async (req, res) => {
 });
 
 
+// ============================================================
 // VERIFY EMAIL
+// ============================================================
+
 router.get("/verify-email", async (req, res) => {
   try {
     const { token } = req.query;
@@ -258,7 +342,10 @@ router.get("/verify-email", async (req, res) => {
 });
 
 
+// ============================================================
 // RESEND VERIFICATION EMAIL
+// ============================================================
+
 router.post("/resend-verification", async (req, res) => {
   try {
     const { email } = req.body;
@@ -406,7 +493,10 @@ router.post("/resend-verification", async (req, res) => {
 });
 
 
+// ============================================================
 // FORGOT PASSWORD
+// ============================================================
+
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -458,9 +548,6 @@ router.post("/forgot-password", async (req, res) => {
       `http://localhost:5173/reset-password?token=${resetToken}`;
 
     // Send the email BEFORE saving the new reset token.
-    //
-    // This prevents a failed email from replacing
-    // an existing valid reset token.
     await sendEmail({
       to: normalizedEmail,
 
@@ -549,7 +636,10 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 
+// ============================================================
 // RESET PASSWORD
+// ============================================================
+
 router.post("/reset-password", async (req, res) => {
   try {
     const {
@@ -564,10 +654,15 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // Check password length
-    if (password.length < 8) {
+    // ========================================================
+    // PASSWORD POLICY
+    // ========================================================
+
+    const passwordError = validatePassword(password);
+
+    if (passwordError) {
       return res.status(400).json({
-        error: "Password must be at least 8 characters long"
+        error: passwordError
       });
     }
 
@@ -636,7 +731,10 @@ router.post("/reset-password", async (req, res) => {
 });
 
 
+// ============================================================
 // LOGIN
+// ============================================================
+
 router.post("/login", async (req, res) => {
   try {
     const {
@@ -700,6 +798,8 @@ router.post("/login", async (req, res) => {
     delete userResponse.password_reset_expires;
 
     // Create JWT token
+    // account_type remains donor/recipient because
+    // it controls FoodBridge authorization.
     const token = jwt.sign(
       {
         id: user.id,
