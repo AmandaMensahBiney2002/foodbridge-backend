@@ -5,7 +5,11 @@ const { getConnectionString } = require("@netlify/database");
 
 let pool;
 
-if (process.env.NETLIFY) {
+if (process.env.NETLIFY_DB_URL) {
+  pool = new Pool({
+    connectionString: process.env.NETLIFY_DB_URL
+  });
+} else if (process.env.NETLIFY) {
   pool = new Pool({
     connectionString: getConnectionString()
   });
