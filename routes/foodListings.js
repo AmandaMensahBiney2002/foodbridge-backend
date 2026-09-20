@@ -1,265 +1,564 @@
 
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+const express = require("express");
+const pool = require("../db");
+const authenticateToken = require("../middleware/authMiddleware");
 
-function FoodListings() {
-  const navigate = useNavigate();
+const router = express.Router();
 
-  const user = JSON.parse(localStorage.getItem("user"));
-  const token = localStorage.getItem("token");
+// ======================================================
+// GET ALL FOOD LISTINGS
+// ======================================================
 
-  const isDonor = user?.account_type === "donor";
+router.get("/", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        food_listings.id,
+        food_listings.food_name,
+        food_listings.description,
+        food_listings.quantity,
+        food_listings.unit,
+        food_listings.expiry_date,
+        food_listings.pickup_location,
+        food_listings.status,
+        food_listings.created_at,
 
-  const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [deletingId, setDeletingId] = useState(null);
+        users.first_name AS donor_first_name,
+        users.last_name AS donor_last_name,
 
-  const fetchListings = async () => {
-    try {
-      const endpoint = isDonor
-        ? `http://localhost:5000/api/food-listings/donor/${user.id}`
-        : "http://localhost:5000/api/food-listings";
+        (
+          food_listings.quantity -
+          COALESCE(
+            SUM(
+              CASE
+                WHEN food_requests.status IN (
+                  'pending',
+                  'approved',
+                  'completed'
+                )
+                THEN food_requests.quantity_requested
+                ELSE 0
+              END
+            ),
+            0
+          )
+        )::INTEGER AS available_quantity
 
-      const response = await fetch(endpoint, {
-        headers: isDonor
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : {},
-      });
+      FROM food_listings
 
-      const data = await response.json();
+      JOIN users
+        ON food_listings.donor_id = users.id
 
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Failed to fetch food listings"
-        );
-      }
+      LEFT JOIN food_requests
+        ON food_listings.id = food_requests.food_listing_id
 
-      setListings(data);
-    } catch (error) {
-      console.error("Error fetching food listings:", error);
-      setError("Unable to load food listings.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      GROUP BY
+        food_listings.id,
+        users.first_name,
+        users.last_name
 
-  useEffect(() => {
-    fetchListings();
-  }, [isDonor, token, user?.id]);
+      ORDER BY food_listings.created_at DESC
+    `);
 
-  const handleDelete = async (listingId) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this food listing?"
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      "Error fetching food listings:",
+      error.message
     );
 
-    if (!confirmed) {
-      return;
-    }
+    res.status(500).json({
+      error: "Failed to fetch food listings"
+    });
+  }
+});
 
+// ======================================================
+// GET FOOD LISTINGS CREATED BY A SPECIFIC DONOR
+// ======================================================
+
+router.get(
+  "/donor/:id",
+  authenticateToken,
+  async (req, res) => {
     try {
-      setDeletingId(listingId);
-      setError("");
+      const donorId = req.params.id;
 
-      const response = await fetch(
-        `http://localhost:5000/api/food-listings/${listingId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Failed to delete food listing"
-        );
+      if (Number(req.user.id) !== Number(donorId)) {
+        return res.status(403).json({
+          error: "You are not authorized to view these listings"
+        });
       }
 
-      await fetchListings();
+      if (req.user.account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donor accounts can view donor listings"
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          food_listings.id,
+          food_listings.food_name,
+          food_listings.description,
+          food_listings.quantity,
+          food_listings.unit,
+          food_listings.expiry_date,
+          food_listings.pickup_location,
+          food_listings.status,
+          food_listings.created_at,
+
+          (
+            food_listings.quantity -
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN food_requests.status IN (
+                    'pending',
+                    'approved',
+                    'completed'
+                  )
+                  THEN food_requests.quantity_requested
+                  ELSE 0
+                END
+              ),
+              0
+            )
+          )::INTEGER AS available_quantity
+
+        FROM food_listings
+
+        LEFT JOIN food_requests
+          ON food_listings.id = food_requests.food_listing_id
+
+        WHERE food_listings.donor_id = $1
+
+        GROUP BY
+          food_listings.id
+
+        ORDER BY food_listings.created_at DESC
+        `,
+        [donorId]
+      );
+
+      res.json(result.rows);
     } catch (error) {
-      console.error("Delete food listing error:", error);
-      setError(error.message);
-    } finally {
-      setDeletingId(null);
+      console.error(
+        "Error fetching donor listings:",
+        error.message
+      );
+
+      res.status(500).json({
+        error: "Failed to fetch donor listings"
+      });
     }
-  };
+  }
+);
 
-  return (
-    <div className="min-h-screen bg-[#FFFDF5] px-6 py-12 text-[#3F352C] md:px-12">
-      <div className="mx-auto max-w-6xl">
+// ======================================================
+// CREATE A FOOD LISTING
+// ======================================================
 
-        <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#006B3F]">
-          FoodBridge
-        </p>
+router.post(
+  "/",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const {
+        food_name,
+        description,
+        quantity,
+        unit,
+        expiry_date,
+        pickup_location
+      } = req.body;
 
-        <h1 className="text-3xl font-bold md:text-4xl">
-          {isDonor ? "My Food Listings" : "Available Food"}
-        </h1>
+      const donor_id = req.user.id;
 
-        <p className="mt-3 max-w-2xl text-[#3F352C]/70">
-          {isDonor
-            ? "Manage the surplus food you have shared with the FoodBridge community."
-            : "Browse surplus food currently available for redistribution."}
-        </p>
+      if (req.user.account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donor accounts can create food listings"
+        });
+      }
 
-        {isDonor && (
-          <button
-            onClick={() => navigate("/food-listings/new")}
-            className="mt-6 rounded-xl bg-[#006B3F] px-5 py-3 font-bold text-white transition hover:bg-[#005531]"
-          >
-            Create Food Listing
-          </button>
-        )}
+      const donorCheck = await pool.query(
+        "SELECT account_type FROM users WHERE id = $1",
+        [donor_id]
+      );
 
-        {loading && (
-          <p className="mt-10 text-[#3F352C]/70">
-            Loading food listings...
-          </p>
-        )}
+      if (donorCheck.rows.length === 0) {
+        return res.status(404).json({
+          error: "Donor not found"
+        });
+      }
 
-        {error && (
-          <p className="mt-10 rounded-xl bg-red-50 p-4 text-sm text-red-600">
-            {error}
-          </p>
-        )}
+      if (donorCheck.rows[0].account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donor accounts can create food listings"
+        });
+      }
 
-        {!loading && !error && listings.length === 0 && (
-          <p className="mt-10 text-[#3F352C]/70">
-            {isDonor
-              ? "You have not created any food listings yet."
-              : "No food listings are currently available."}
-          </p>
-        )}
+      if (
+        !donor_id ||
+        !food_name ||
+        !quantity ||
+        !pickup_location
+      ) {
+        return res.status(400).json({
+          error:
+            "Donor, food name, quantity, and pickup location are required"
+        });
+      }
 
-        {!loading && !error && listings.length > 0 && (
-          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {listings.map((listing) => (
-              <div
-                key={listing.id}
-                className="flex h-full flex-col rounded-2xl border border-[#3F352C]/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-4">
-                    <h2 className="text-xl font-bold leading-tight">
-                      {listing.food_name}
-                    </h2>
+      if (Number(quantity) <= 0) {
+        return res.status(400).json({
+          error: "Quantity must be greater than 0"
+        });
+      }
 
-                    <span className="shrink-0 rounded-full bg-[#E8F3EC] px-3 py-1 text-xs font-semibold capitalize text-[#006B3F]">
-                      {listing.status}
-                    </span>
-                  </div>
+      const result = await pool.query(
+        `
+        INSERT INTO food_listings (
+          donor_id,
+          food_name,
+          description,
+          quantity,
+          unit,
+          expiry_date,
+          pickup_location
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *;
+        `,
+        [
+          donor_id,
+          food_name,
+          description,
+          quantity,
+          unit,
+          expiry_date,
+          pickup_location
+        ]
+      );
 
-                  <p className="mt-4 min-h-[48px] text-sm leading-relaxed text-[#3F352C]/65">
-                    {listing.description || "No description provided."}
-                  </p>
-                </div>
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error(
+        "Error creating food listing:",
+        error.message
+      );
 
-                <div className="mt-6 rounded-xl bg-[#FFFDF5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#3F352C]/55">
-                    Available
-                  </p>
+      res.status(500).json({
+        error: "Failed to create food listing"
+      });
+    }
+  }
+);
 
-                  <p className="mt-1 text-2xl font-bold text-[#006B3F]">
-                    {listing.available_quantity}{" "}
-                    <span className="text-base font-semibold">
-                      {listing.unit || "portions"}
-                    </span>
-                  </p>
-                </div>
+// ======================================================
+// EDIT A FOOD LISTING
+// ======================================================
 
-                <div className="mt-6 space-y-4 text-sm">
+router.patch(
+  "/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#3F352C]/50">
-                      Pickup Location
-                    </p>
+      const {
+        food_name,
+        description,
+        quantity,
+        unit,
+        expiry_date,
+        pickup_location
+      } = req.body;
 
-                    <p className="mt-1 leading-relaxed">
-                      {listing.pickup_location}
-                    </p>
-                  </div>
+      const donorId = req.user.id;
 
-                  {!isDonor && listing.donor_first_name && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[#3F352C]/50">
-                        Donor
-                      </p>
+      if (req.user.account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donor accounts can edit food listings"
+        });
+      }
 
-                      <p className="mt-1">
-                        {listing.donor_first_name}{" "}
-                        {listing.donor_last_name}
-                      </p>
-                    </div>
-                  )}
+      const listingCheck = await pool.query(
+        `
+        SELECT
+          id,
+          donor_id,
+          quantity
+        FROM food_listings
+        WHERE id = $1
+        `,
+        [id]
+      );
 
-                  {listing.expiry_date && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[#3F352C]/50">
-                        Expiry Date
-                      </p>
+      if (listingCheck.rows.length === 0) {
+        return res.status(404).json({
+          error: "Food listing not found"
+        });
+      }
 
-                      <p className="mt-1">
-                        {listing.expiry_date}
-                      </p>
-                    </div>
-                  )}
-                </div>
+      const listing = listingCheck.rows[0];
 
-                {/* Donor Actions */}
-                {isDonor && (
-                  <div className="mt-auto flex gap-3 pt-6">
-                    <button
-                      onClick={() =>
-                        navigate(
-                          `/food-listings/${listing.id}/edit`
-                        )
-                      }
-                      className="flex-1 rounded-xl border-2 border-[#006B3F] px-4 py-3 font-bold text-[#006B3F] transition hover:bg-[#E8F3EC]"
-                    >
-                      Edit
-                    </button>
+      if (Number(listing.donor_id) !== Number(donorId)) {
+        return res.status(403).json({
+          error: "You are not authorized to edit this listing"
+        });
+      }
 
-                    <button
-                      onClick={() => handleDelete(listing.id)}
-                      disabled={deletingId === listing.id}
-                      className="flex-1 rounded-xl border-2 border-red-500 px-4 py-3 font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {deletingId === listing.id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
-                  </div>
-                )}
+      if (!food_name || !quantity || !pickup_location) {
+        return res.status(400).json({
+          error:
+            "Food name, quantity, and pickup location are required"
+        });
+      }
 
-                {/* Recipient Action */}
-                {!isDonor && (
-                  <button
-                    onClick={() =>
-                      navigate(
-                        `/food-listings/${listing.id}/request`
-                      )
-                    }
-                    className="mt-auto pt-6"
-                  >
-                    <span className="block w-full rounded-xl bg-[#006B3F] px-5 py-3 text-center font-bold text-white transition hover:bg-[#005531]">
-                      Request Food
-                    </span>
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+      if (Number(quantity) <= 0) {
+        return res.status(400).json({
+          error: "Quantity must be greater than 0"
+        });
+      }
 
-export default FoodListings;
+      const requestQuantityCheck = await pool.query(
+        `
+        SELECT
+          COALESCE(
+            SUM(
+              CASE
+                WHEN status IN (
+                  'pending',
+                  'approved',
+                  'completed'
+                )
+                THEN quantity_requested
+                ELSE 0
+              END
+            ),
+            0
+          ) AS reserved_quantity
+        FROM food_requests
+        WHERE food_listing_id = $1
+        `,
+        [id]
+      );
+
+      const reservedQuantity = Number(
+        requestQuantityCheck.rows[0].reserved_quantity
+      );
+
+      if (Number(quantity) < reservedQuantity) {
+        return res.status(400).json({
+          error:
+            `Quantity cannot be less than ${reservedQuantity} because that amount has already been requested`
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE food_listings
+        SET
+          food_name = $1,
+          description = $2,
+          quantity = $3,
+          unit = $4,
+          expiry_date = $5,
+          pickup_location = $6
+        WHERE id = $7
+        RETURNING *;
+        `,
+        [
+          food_name,
+          description,
+          quantity,
+          unit,
+          expiry_date,
+          pickup_location,
+          id
+        ]
+      );
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error(
+        "Error editing food listing:",
+        error.message
+      );
+
+      res.status(500).json({
+        error: "Failed to edit food listing"
+      });
+    }
+  }
+);
+
+// ======================================================
+// DELETE A FOOD LISTING
+// ======================================================
+
+router.delete(
+  "/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const donorId = req.user.id;
+
+      if (req.user.account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donor accounts can delete food listings"
+        });
+      }
+
+      const listingCheck = await pool.query(
+        `
+        SELECT
+          id,
+          donor_id
+        FROM food_listings
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (listingCheck.rows.length === 0) {
+        return res.status(404).json({
+          error: "Food listing not found"
+        });
+      }
+
+      const listing = listingCheck.rows[0];
+
+      if (Number(listing.donor_id) !== Number(donorId)) {
+        return res.status(403).json({
+          error: "You are not authorized to delete this listing"
+        });
+      }
+
+      const requestCheck = await pool.query(
+        `
+        SELECT COUNT(*) AS count
+        FROM food_requests
+        WHERE food_listing_id = $1
+        `,
+        [id]
+      );
+
+      const requestCount = Number(
+        requestCheck.rows[0].count
+      );
+
+      if (requestCount > 0) {
+        return res.status(400).json({
+          error:
+            "This listing cannot be deleted because it has food request history"
+        });
+      }
+
+      await pool.query(
+        `
+        DELETE FROM food_listings
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      return res.json({
+        message: "Food listing deleted successfully"
+      });
+    } catch (error) {
+      console.error(
+        "Error deleting food listing:",
+        error.message
+      );
+
+      res.status(500).json({
+        error: "Failed to delete food listing"
+      });
+    }
+  }
+);
+
+// ======================================================
+// CLOSE A FOOD LISTING
+// ======================================================
+
+router.patch(
+  "/:id/close",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const donorId = req.user.id;
+
+      if (req.user.account_type !== "donor") {
+        return res.status(403).json({
+          error: "Only donors can close food listings"
+        });
+      }
+
+      const listingCheck = await pool.query(
+        `
+        SELECT
+          id,
+          donor_id,
+          status
+        FROM food_listings
+        WHERE id = $1
+        `,
+        [id]
+      );
+
+      if (listingCheck.rows.length === 0) {
+        return res.status(404).json({
+          error: "Food listing not found"
+        });
+      }
+
+      const listing = listingCheck.rows[0];
+
+      if (Number(listing.donor_id) !== Number(donorId)) {
+        return res.status(403).json({
+          error: "You are not authorized to close this listing"
+        });
+      }
+
+      if (listing.status === "closed") {
+        return res.status(400).json({
+          error: "This listing is already closed"
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE food_listings
+        SET status = 'closed'
+        WHERE id = $1
+        RETURNING *;
+        `
+        ,
+        [id]
+      );
+
+      return res.json({
+        message: "Food listing closed successfully",
+        listing: result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Error closing food listing:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error: "Failed to close food listing"
+      });
+    }
+  }
+);
+
+module.exports = router;
 
