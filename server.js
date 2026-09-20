@@ -13,7 +13,7 @@ const authenticateToken = require("./middleware/authMiddleware");
 
 const app = express();
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 app.use(cors());
@@ -245,7 +245,8 @@ app.patch(
 // START SERVER
 // ======================================================
 
-app.listen(PORT, () => {
+
+  app.listen(PORT, "0.0.0.0", () => {
   console.log(
     `FoodBridge backend running on port ${PORT}`
   );
