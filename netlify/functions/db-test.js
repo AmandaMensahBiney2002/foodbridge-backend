@@ -1,9 +1,18 @@
-const { getConnectionString } = require("@netlify/database");
 const { Pool } = require("pg");
 
 exports.handler = async () => {
   try {
-    const connectionString = getConnectionString();
+    const connectionString = process.env.NETLIFY_DB_URL;
+
+    if (!connectionString) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          success: false,
+          error: "NETLIFY_DB_URL is not available"
+        })
+      };
+    }
 
     const pool = new Pool({
       connectionString
@@ -22,7 +31,7 @@ exports.handler = async () => {
       })
     };
   } catch (error) {
-    console.error("DB TEST ERROR:", error);
+    console.error("DB TEST ERROR:", error.message);
 
     return {
       statusCode: 500,
