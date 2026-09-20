@@ -69,7 +69,8 @@ router.get("/", async (req, res) => {
     );
 
     res.status(500).json({
-      error: "Failed to fetch food listings"
+      error: "Failed to fetch food listings",
+      details: error.message
     });
   }
 });
@@ -541,8 +542,7 @@ router.patch(
         SET status = 'closed'
         WHERE id = $1
         RETURNING *;
-        `,
-        [id]
+        `
       );
 
       return res.json({
