@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
@@ -245,10 +244,16 @@ app.patch(
 // START SERVER
 // ======================================================
 
-
+if (require.main === module) {
   app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `FoodBridge backend running on port ${PORT}`
-  );
-});
+    console.log(
+      `FoodBridge backend running on port ${PORT}`
+    );
+  });
+}
 
+// ======================================================
+// EXPORT EXPRESS APP FOR NETLIFY
+// ======================================================
+
+module.exports = app;
