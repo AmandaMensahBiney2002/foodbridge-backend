@@ -66,7 +66,6 @@ router.post("/signup", async (req, res) => {
       user_type
     } = req.body;
 
-    // Check required fields
     if (
       !first_name ||
       !last_name ||
@@ -80,10 +79,6 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    // ========================================================
-    // PASSWORD POLICY
-    // ========================================================
-
     const passwordError = validatePassword(password);
 
     if (passwordError) {
@@ -92,16 +87,12 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    // Check account type
-    // This remains donor/recipient because it controls
-    // FoodBridge permissions and authorization.
     if (!["donor", "recipient"].includes(account_type)) {
       return res.status(400).json({
         error: "Account type must be donor or recipient"
       });
     }
 
-    // Check user type if provided
     if (
       user_type &&
       ![
@@ -117,10 +108,8 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    // Normalize email
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if email already exists
     const existingUser = await User.findOne({
       where: {
         email: normalizedEmail
@@ -133,30 +122,24 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate verification token
     const verificationToken = crypto
       .randomBytes(32)
       .toString("hex");
 
-    // Store only a hash of the token in the database
     const verificationTokenHash = crypto
       .createHash("sha256")
       .update(verificationToken)
       .digest("hex");
 
-    // Verification link expires in 10 minutes
     const verificationExpires = new Date(
       Date.now() + 10 * 60 * 1000
     );
 
-    // Verification link
     const verificationUrl =
       `http://localhost:5173/verify-email?token=${verificationToken}`;
 
-    // Send verification email BEFORE creating the account.
     await sendEmail({
       to: normalizedEmail,
 
@@ -220,30 +203,20 @@ router.post("/signup", async (req, res) => {
       `
     });
 
-    // Create the user ONLY after the verification email
-    // has been sent successfully.
     const user = await User.create({
       first_name: first_name.trim(),
       last_name: last_name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
       phone: phone ? phone.trim() : null,
-
-      // Donor/recipient role used by FoodBridge authorization
       account_type,
-
-      // Describes what type of user this is
       user_type: user_type || null,
-
       created_at: new Date(),
-
       email_verified: false,
       email_verification_token: verificationTokenHash,
       email_verification_expires: verificationExpires
     });
 
-    // Don't send password or security tokens
-    // back to the frontend
     const userResponse = user.toJSON();
 
     delete userResponse.password;
@@ -255,7 +228,6 @@ router.post("/signup", async (req, res) => {
     res.status(201).json({
       message:
         "Account created successfully. Please check your email to verify your account.",
-
       user: userResponse
     });
 
@@ -286,13 +258,11 @@ router.get("/verify-email", async (req, res) => {
       });
     }
 
-    // Hash the token from the URL
     const tokenHash = crypto
       .createHash("sha256")
       .update(token)
       .digest("hex");
 
-    // Find the user
     const user = await User.findOne({
       where: {
         email_verification_token: tokenHash
@@ -305,7 +275,6 @@ router.get("/verify-email", async (req, res) => {
       });
     }
 
-    // Check expiration
     if (
       !user.email_verification_expires ||
       new Date() >
@@ -316,10 +285,8 @@ router.get("/verify-email", async (req, res) => {
       });
     }
 
-    // Mark email as verified
     user.email_verified = true;
 
-    // Remove the token after successful verification
     user.email_verification_token = null;
     user.email_verification_expires = null;
 
@@ -356,17 +323,14 @@ router.post("/resend-verification", async (req, res) => {
       });
     }
 
-    // Normalize email
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Find user
     const user = await User.findOne({
       where: {
         email: normalizedEmail
       }
     });
 
-    // Generic response for unknown emails
     if (!user) {
       return res.json({
         message:
@@ -374,34 +338,28 @@ router.post("/resend-verification", async (req, res) => {
       });
     }
 
-    // Check if already verified
     if (user.email_verified) {
       return res.status(400).json({
         error: "This email address has already been verified."
       });
     }
 
-    // Generate a new verification token
     const verificationToken = crypto
       .randomBytes(32)
       .toString("hex");
 
-    // Store only a hash of the token
     const verificationTokenHash = crypto
       .createHash("sha256")
       .update(verificationToken)
       .digest("hex");
 
-    // New verification link expires in 10 minutes
     const verificationExpires = new Date(
       Date.now() + 10 * 60 * 1000
     );
 
-    // New verification link
     const verificationUrl =
       `http://localhost:5173/verify-email?token=${verificationToken}`;
 
-    // Send the email BEFORE changing the database token.
     await sendEmail({
       to: normalizedEmail,
 
@@ -465,7 +423,6 @@ router.post("/resend-verification", async (req, res) => {
       `
     });
 
-    // Only save the new token AFTER the email was sent successfully.
     user.email_verification_token =
       verificationTokenHash;
 
@@ -507,19 +464,14 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    // Normalize email
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Find the user
     const user = await User.findOne({
       where: {
         email: normalizedEmail
       }
     });
 
-    // Always return the same response for unknown emails.
-    // This prevents people from discovering which email
-    // addresses have FoodBridge accounts.
     if (!user) {
       return res.json({
         message:
@@ -527,27 +479,22 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    // Generate a secure random reset token
     const resetToken = crypto
       .randomBytes(32)
       .toString("hex");
 
-    // Store only a hash of the token
     const resetTokenHash = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
 
-    // Password reset link expires in 10 minutes
     const resetExpires = new Date(
       Date.now() + 10 * 60 * 1000
     );
 
-    // Password reset link
     const resetUrl =
       `http://localhost:5173/reset-password?token=${resetToken}`;
 
-    // Send the email BEFORE saving the new reset token.
     await sendEmail({
       to: normalizedEmail,
 
@@ -611,8 +558,6 @@ router.post("/forgot-password", async (req, res) => {
       `
     });
 
-    // Save the reset token ONLY after the email
-    // has been sent successfully.
     user.password_reset_token = resetTokenHash;
     user.password_reset_expires = resetExpires;
 
@@ -647,16 +592,11 @@ router.post("/reset-password", async (req, res) => {
       password
     } = req.body;
 
-    // Check required fields
     if (!token || !password) {
       return res.status(400).json({
         error: "Reset token and new password are required"
       });
     }
-
-    // ========================================================
-    // PASSWORD POLICY
-    // ========================================================
 
     const passwordError = validatePassword(password);
 
@@ -666,27 +606,23 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // Hash the token received from the reset link
     const tokenHash = crypto
       .createHash("sha256")
       .update(token)
       .digest("hex");
 
-    // Find the user using the hashed token
     const user = await User.findOne({
       where: {
         password_reset_token: tokenHash
       }
     });
 
-    // Invalid token
     if (!user) {
       return res.status(400).json({
         error: "Invalid or expired password reset link"
       });
     }
 
-    // Check token expiration
     if (
       !user.password_reset_expires ||
       new Date() >
@@ -697,17 +633,13 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // Hash the new password
     const hashedPassword = await bcrypt.hash(
       password,
       10
     );
 
-    // Update the password
     user.password = hashedPassword;
 
-    // Clear the reset token immediately.
-    // This makes the reset link single-use.
     user.password_reset_token = null;
     user.password_reset_expires = null;
 
@@ -742,18 +674,15 @@ router.post("/login", async (req, res) => {
       password
     } = req.body;
 
-    // Check required fields
     if (!email || !password) {
       return res.status(400).json({
         error: "Email and password are required"
       });
     }
 
-    // Normalize email
     const normalizedEmail =
       email.trim().toLowerCase();
 
-    // Find user by email
     const user = await User.findOne({
       where: {
         email: normalizedEmail
@@ -766,7 +695,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Compare password
     const passwordMatches =
       await bcrypt.compare(
         password,
@@ -779,7 +707,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Require email verification before login
     if (!user.email_verified) {
       return res.status(403).json({
         error:
@@ -787,7 +714,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Remove sensitive information
     const userResponse =
       user.toJSON();
 
@@ -797,9 +723,6 @@ router.post("/login", async (req, res) => {
     delete userResponse.password_reset_token;
     delete userResponse.password_reset_expires;
 
-    // Create JWT token
-    // account_type remains donor/recipient because
-    // it controls FoodBridge authorization.
     const token = jwt.sign(
       {
         id: user.id,
@@ -818,13 +741,11 @@ router.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(
-      "Error logging in:",
-      error.message
-    );
+    console.error("LOGIN ERROR:", error);
+    console.error("LOGIN ERROR STACK:", error.stack);
 
     res.status(500).json({
-      error: "Failed to log in"
+      error: error.message
     });
   }
 });
