@@ -4,10 +4,13 @@ const { Pool } = require("pg");
 
 let pool;
 
-if (process.env.NETLIFY_DB_URL) {
-  // Netlify production database
+if (process.env.DATABASE_URL) {
+  // Production database (Render)
   pool = new Pool({
-    connectionString: process.env.NETLIFY_DB_URL
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false
+    }
   });
 } else {
   // Local PostgreSQL database
