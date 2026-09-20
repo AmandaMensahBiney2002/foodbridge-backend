@@ -1,19 +1,16 @@
 require("dotenv").config();
 
 const { Pool } = require("pg");
-const { getConnectionString } = require("@netlify/database");
 
 let pool;
 
-try {
-  const connectionString = getConnectionString();
-
+if (process.env.NETLIFY_DB_URL) {
+  // Netlify production database
   pool = new Pool({
-    connectionString
+    connectionString: process.env.NETLIFY_DB_URL
   });
-} catch (error) {
-  console.log("Using local database configuration.");
-
+} else {
+  // Local PostgreSQL database
   pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
