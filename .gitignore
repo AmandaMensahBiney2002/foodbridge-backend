@@ -3,3 +3,6 @@ node_modules/
 foodbridge_backup.dump
 server.js.backup
 server.log
+
+# Local Netlify folder
+.netlify
