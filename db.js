@@ -5,15 +5,15 @@ const { getConnectionString } = require("@netlify/database");
 
 let pool;
 
-if (process.env.NETLIFY_DB_URL) {
+try {
+  const connectionString = getConnectionString();
+
   pool = new Pool({
-    connectionString: process.env.NETLIFY_DB_URL
+    connectionString
   });
-} else if (process.env.NETLIFY) {
-  pool = new Pool({
-    connectionString: getConnectionString()
-  });
-} else {
+} catch (error) {
+  console.log("Using local database configuration.");
+
   pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
