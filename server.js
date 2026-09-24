@@ -1,14 +1,31 @@
+console.log("STARTUP: beginning server.js");
+
 const express = require("express");
+console.log("STARTUP: express loaded");
+
 const cors = require("cors");
+console.log("STARTUP: cors loaded");
+
 const pool = require("./db");
+console.log("STARTUP: db loaded");
 
 const authRoutes = require("./routes/auth");
+console.log("STARTUP: auth loaded");
+
 const foodListingsRoutes = require("./routes/foodListings");
+console.log("STARTUP: food listings loaded");
+
 const foodRequestsRoutes = require("./routes/foodRequests");
+console.log("STARTUP: food requests loaded");
+
 const contactRoutes = require("./routes/contact");
+console.log("STARTUP: contact loaded");
+
 const profileRoutes = require("./routes/profile");
+console.log("STARTUP: profile loaded");
 
 const authenticateToken = require("./middleware/authMiddleware");
+console.log("STARTUP: auth middleware loaded");
 
 const app = express();
 
@@ -62,21 +79,21 @@ app.get(
 
       const result = await pool.query(
         `
-        SELECT
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          account_type,
-          profile_photo,
-          display_name,
-          profile_type,
-          bio,
-          location,
-          is_verified,
-          created_at
-        FROM users
+        SELECT 
+          id, 
+          first_name, 
+          last_name, 
+          email, 
+          phone, 
+          account_type, 
+          profile_photo, 
+          display_name, 
+          profile_type, 
+          bio, 
+          location, 
+          is_verified, 
+          created_at 
+        FROM users 
         WHERE id = $1
         `,
         [userId]
@@ -157,30 +174,30 @@ app.patch(
 
       const result = await pool.query(
         `
-        UPDATE users
-        SET
-          first_name = $1,
-          last_name = $2,
-          phone = $3,
-          profile_photo = $4,
-          display_name = $5,
-          profile_type = $6,
-          bio = $7,
-          location = $8
-        WHERE id = $9
-        RETURNING
-          id,
-          first_name,
-          last_name,
-          email,
-          phone,
-          account_type,
-          profile_photo,
-          display_name,
-          profile_type,
-          bio,
-          location,
-          is_verified,
+        UPDATE users 
+        SET 
+          first_name = $1, 
+          last_name = $2, 
+          phone = $3, 
+          profile_photo = $4, 
+          display_name = $5, 
+          profile_type = $6, 
+          bio = $7, 
+          location = $8 
+        WHERE id = $9 
+        RETURNING 
+          id, 
+          first_name, 
+          last_name, 
+          email, 
+          phone, 
+          account_type, 
+          profile_photo, 
+          display_name, 
+          profile_type, 
+          bio, 
+          location, 
+          is_verified, 
           created_at
         `,
         [
