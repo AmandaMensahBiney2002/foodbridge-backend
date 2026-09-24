@@ -1,3 +1,6 @@
+
+require("./test-smtp");
+
 console.log("STARTUP: beginning server.js");
 
 const express = require("express");
