@@ -110,11 +110,15 @@ router.post("/signup", async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    console.log("SIGNUP: About to check existing user");
+
     const existingUser = await User.findOne({
       where: {
         email: normalizedEmail
       }
     });
+
+    console.log("SIGNUP: Existing user check completed");
 
     if (existingUser) {
       return res.status(409).json({
