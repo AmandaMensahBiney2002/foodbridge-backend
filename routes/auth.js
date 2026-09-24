@@ -140,6 +140,8 @@ router.post("/signup", async (req, res) => {
     const verificationUrl =
       `http://localhost:5173/verify-email?token=${verificationToken}`;
 
+    console.log("SIGNUP: About to send verification email");
+
     await sendEmail({
       to: normalizedEmail,
 
@@ -202,6 +204,8 @@ router.post("/signup", async (req, res) => {
         </div>
       `
     });
+
+    console.log("SIGNUP: Verification email sent successfully");
 
     const user = await User.create({
       first_name: first_name.trim(),
