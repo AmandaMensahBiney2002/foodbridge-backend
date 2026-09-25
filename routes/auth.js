@@ -3,8 +3,13 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
+console.log("AUTH START: loading User model");
 const User = require("../models/User");
+console.log("AUTH START: User model loaded");
+
+console.log("AUTH START: loading email service");
 const { sendEmail } = require("../services/emailService");
+console.log("AUTH START: email service loaded");
 
 const router = express.Router();
 
