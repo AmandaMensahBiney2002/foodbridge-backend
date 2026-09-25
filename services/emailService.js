@@ -1,44 +1,64 @@
-const nodemailer = require("nodemailer");
+const https = require("https");
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-});
+const sendEmail = ({ to, subject, html }) => {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.BREVO_API_KEY;
 
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("EMAIL VERIFY FAILED:", error.message);
-  } else {
-    console.log("EMAIL VERIFY SUCCESS:", success);
-  }
-});
+    if (!apiKey) {
+      return reject(new Error("BREVO_API_KEY is not configured"));
+    }
 
-const sendEmail = async ({ to, subject, html }) => {
-  try {
-    console.log("EMAIL: About to send");
-
-    const info = await transporter.sendMail({
-      from: `FoodBridge <${process.env.EMAIL_USER}>`,
-      to,
+    const data = JSON.stringify({
+      sender: {
+        name: "FoodBridge",
+        email: "foodbridge.notifications@gmail.com"
+      },
+      to: [
+        {
+          email: to
+        }
+      ],
       subject,
-      html,
+      htmlContent: html
     });
 
-    console.log("EMAIL: Sent successfully:", info.messageId);
+    const options = {
+      hostname: "api.brevo.com",
+      path: "/v3/smtp/email",
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data)
+      }
+    };
 
-    return info;
-  } catch (error) {
-    console.error("EMAIL SERVICE ERROR:", error.message);
-    throw new Error("Failed to send email");
-  }
+    const request = https.request(options, (response) => {
+      let body = "";
+
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+
+      response.on("end", () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          console.log("Email sent successfully through Brevo:", body);
+          resolve(JSON.parse(body));
+        } else {
+          console.error("Brevo email error:", response.statusCode, body);
+          reject(new Error(`Brevo email failed with status ${response.statusCode}`));
+        }
+      });
+    });
+
+    request.on("error", (error) => {
+      console.error("Brevo request error:", error.message);
+      reject(error);
+    });
+
+    request.write(data);
+    request.end();
+  });
 };
 
-module.exports = {
-  sendEmail,
-};
+module.exports = { sendEmail };
