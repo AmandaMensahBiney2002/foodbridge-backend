@@ -147,7 +147,7 @@ router.post("/signup", async (req, res) => {
     );
 
     const verificationUrl =
-      `http://localhost:5173/verify-email?token=${verificationToken}`;
+      `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
     console.log("SIGNUP: About to send verification email");
 
@@ -371,7 +371,7 @@ router.post("/resend-verification", async (req, res) => {
     );
 
     const verificationUrl =
-      `http://localhost:5173/verify-email?token=${verificationToken}`;
+      `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
     await sendEmail({
       to: normalizedEmail,
@@ -506,7 +506,7 @@ router.post("/forgot-password", async (req, res) => {
     );
 
     const resetUrl =
-      `http://localhost:5173/reset-password?token=${resetToken}`;
+      `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
     await sendEmail({
       to: normalizedEmail,
