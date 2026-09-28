@@ -2,6 +2,7 @@ const express = require("express");
 const pool = require("../db");
 const authenticateToken = require("../middleware/authMiddleware");
 const { sendEmail } = require("../services/emailService");
+const { createNotification } = require("../services/notificationService");
 
 const router = express.Router();
 
@@ -87,6 +88,8 @@ router.post(
           food_listings.food_name,
           food_listings.unit,
           food_listings.pickup_location,
+
+          users.id AS donor_id,
           users.first_name AS donor_first_name,
           users.last_name AS donor_last_name,
           users.email AS donor_email,
@@ -123,6 +126,7 @@ router.post(
           food_listings.food_name,
           food_listings.unit,
           food_listings.pickup_location,
+          users.id,
           users.first_name,
           users.last_name,
           users.email
@@ -183,7 +187,31 @@ router.post(
 
       const newRequest = result.rows[0];
 
-      // Notify donor by email
+      // ======================================================
+      // CREATE IN-APP NOTIFICATION FOR DONOR
+      // ======================================================
+
+      try {
+        await createNotification({
+          userId: listing.donor_id,
+          type: "new_request",
+          title: "New food request",
+          message: `Someone requested ${quantity_requested} ${
+            listing.unit || "portions"
+          } of ${listing.food_name}.`,
+          relatedRequestId: newRequest.id
+        });
+      } catch (notificationError) {
+        console.error(
+          "Failed to create donor notification:",
+          notificationError.message
+        );
+      }
+
+      // ======================================================
+      // NOTIFY DONOR BY EMAIL
+      // ======================================================
+
       try {
         await sendEmail({
           to: listing.donor_email,
@@ -202,7 +230,9 @@ router.post(
 
               <p>
                 <strong>Food:</strong> ${listing.food_name}<br>
-                <strong>Quantity requested:</strong> ${quantity_requested} ${listing.unit || "portions"}<br>
+                <strong>Quantity requested:</strong> ${quantity_requested} ${
+                  listing.unit || "portions"
+                }<br>
                 <strong>Pickup location:</strong> ${listing.pickup_location}
               </p>
 
@@ -724,6 +754,13 @@ router.patch(
 
         const updatedRequest = result.rows[0];
 
+        // Create in-app notification
+        await createRecipientNotification(
+          request,
+          status
+        );
+
+        // Send email notification
         await notifyRecipient(
           request,
           status
@@ -745,7 +782,13 @@ router.patch(
 
       const updatedRequest = result.rows[0];
 
-      // Notify recipient by email
+      // Create in-app notification
+      await createRecipientNotification(
+        request,
+        status
+      );
+
+      // Send email notification
       await notifyRecipient(
         request,
         status
@@ -901,7 +944,29 @@ router.patch(
 
       const updatedRequest = result.rows[0];
 
-      // Notify recipient when pickup details are changed
+      // ======================================================
+      // CREATE IN-APP PICKUP NOTIFICATION
+      // ======================================================
+
+      try {
+        await createNotification({
+          userId: request.recipient_id,
+          type: "pickup_update",
+          title: "Pickup details updated",
+          message: `The pickup details for your ${request.food_name} request have been updated.`,
+          relatedRequestId: request.id
+        });
+      } catch (notificationError) {
+        console.error(
+          "Failed to create pickup notification:",
+          notificationError.message
+        );
+      }
+
+      // ======================================================
+      // NOTIFY RECIPIENT BY EMAIL
+      // ======================================================
+
       try {
         await sendEmail({
           to: request.recipient_email,
@@ -997,7 +1062,51 @@ function formatPickupStatus(status) {
 }
 
 // ======================================================
-// HELPER: NOTIFY RECIPIENT
+// HELPER: CREATE RECIPIENT NOTIFICATION
+// ======================================================
+
+async function createRecipientNotification(request, status) {
+  let title = "";
+  let message = "";
+
+  if (status === "approved") {
+    title = "Request approved";
+    message = `Your request for ${request.quantity_requested} ${
+      request.unit || "portions"
+    } of ${request.food_name} has been approved.`;
+  } else if (status === "rejected") {
+    title = "Request rejected";
+    message = `Your request for ${request.quantity_requested} ${
+      request.unit || "portions"
+    } of ${request.food_name} was not approved by the donor.`;
+  } else if (status === "completed") {
+    title = "Request completed";
+    message = `Your request for ${request.quantity_requested} ${
+      request.unit || "portions"
+    } of ${request.food_name} has been marked as completed.`;
+  } else {
+    title = "Request updated";
+    message = `The status of your request for ${request.food_name} has been updated to ${status}.`;
+  }
+
+  try {
+    await createNotification({
+      userId: request.recipient_id,
+      type: `request_${status}`,
+      title,
+      message,
+      relatedRequestId: request.id
+    });
+  } catch (notificationError) {
+    console.error(
+      "Failed to create recipient notification:",
+      notificationError.message
+    );
+  }
+}
+
+// ======================================================
+// HELPER: NOTIFY RECIPIENT BY EMAIL
 // ======================================================
 
 async function notifyRecipient(request, status) {

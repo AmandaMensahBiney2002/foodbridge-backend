@@ -1,6 +1,9 @@
+
 const https = require("https");
 
 const sendEmail = ({ to, subject, html }) => {
+  console.log("EMAIL: starting Brevo request", new Date().toISOString());
+
   return new Promise((resolve, reject) => {
     const apiKey = process.env.BREVO_API_KEY;
 
@@ -41,12 +44,21 @@ const sendEmail = ({ to, subject, html }) => {
       });
 
       response.on("end", () => {
+        console.log(
+          "EMAIL: Brevo responded",
+          new Date().toISOString()
+        );
+
         if (response.statusCode >= 200 && response.statusCode < 300) {
           console.log("Email sent successfully through Brevo:", body);
           resolve(JSON.parse(body));
         } else {
           console.error("Brevo email error:", response.statusCode, body);
-          reject(new Error(`Brevo email failed with status ${response.statusCode}`));
+          reject(
+            new Error(
+              `Brevo email failed with status ${response.statusCode}`
+            )
+          );
         }
       });
     });
@@ -62,3 +74,4 @@ const sendEmail = ({ to, subject, html }) => {
 };
 
 module.exports = { sendEmail };
+

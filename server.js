@@ -1,6 +1,3 @@
-
-
-
 console.log("STARTUP: beginning server.js");
 
 const express = require("express");
@@ -11,6 +8,9 @@ console.log("STARTUP: cors loaded");
 
 const pool = require("./db");
 console.log("STARTUP: db loaded");
+
+const sequelize = require("./sequelize");
+console.log("STARTUP: sequelize loaded");
 
 const authRoutes = require("./routes/auth");
 console.log("STARTUP: auth loaded");
@@ -26,6 +26,9 @@ console.log("STARTUP: contact loaded");
 
 const profileRoutes = require("./routes/profile");
 console.log("STARTUP: profile loaded");
+
+const notificationsRoutes = require("./routes/notifications");
+console.log("STARTUP: notifications loaded");
 
 const authenticateToken = require("./middleware/authMiddleware");
 console.log("STARTUP: auth middleware loaded");
@@ -48,6 +51,9 @@ app.use("/api/contact", contactRoutes);
 
 // Public profiles
 app.use("/api/profiles", profileRoutes);
+
+// Notifications
+app.use("/api/notifications", notificationsRoutes);
 
 // ======================================================
 // HOME
@@ -252,6 +258,9 @@ app.patch(
   try {
     await pool.query("SELECT NOW()");
     console.log("Database connected successfully!");
+
+    await sequelize.authenticate();
+    console.log("Sequelize database connection ready!");
   } catch (error) {
     console.error(
       "Database connection failed:",
