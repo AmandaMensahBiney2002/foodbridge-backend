@@ -676,6 +676,21 @@ router.patch(
         });
       }
 
+      // ======================================================
+      // COMPLETION RULE
+      // A request can only be completed AFTER collection.
+      // ======================================================
+
+      if (
+        status === "completed" &&
+        request.pickup_status !== "collected"
+      ) {
+        return res.status(400).json({
+          error:
+            "This request can only be completed after the food has been collected."
+        });
+      }
+
       // A closed listing should not receive new approvals
       if (
         status === "approved" &&
@@ -769,7 +784,15 @@ router.patch(
         return res.json(updatedRequest);
       }
 
-      // Update request status
+      // ======================================================
+      // UPDATE REQUEST STATUS
+      //
+      // Completing a request does NOT automatically
+      // change the pickup status.
+      //
+      // The pickup must already be "collected".
+      // ======================================================
+
       const result = await pool.query(
         `
         UPDATE food_requests
@@ -852,6 +875,9 @@ router.patch(
           food_requests.recipient_id,
           food_requests.status,
           food_requests.pickup_status,
+          food_requests.pickup_date,
+          food_requests.pickup_time,
+          food_requests.collection_instructions,
 
           food_listings.donor_id,
           food_listings.food_name,
@@ -901,21 +927,49 @@ router.patch(
         });
       }
 
+      // ======================================================
+      // PICKUP STATUS RULES
+      // ======================================================
+
+      // A pickup cannot be marked as collected unless
+      // the request has been approved.
+      if (
+        pickup_status === "collected" &&
+        request.status !== "approved"
+      ) {
+        return res.status(400).json({
+          error:
+            "Food can only be marked as collected after the request has been approved."
+        });
+      }
+
+      // A completed request must remain collected.
+      if (
+        request.status === "completed" &&
+        pickup_status &&
+        pickup_status !== "collected"
+      ) {
+        return res.status(400).json({
+          error:
+            "A completed request must have a collected pickup status."
+        });
+      }
+
       // Use existing values when a field is not supplied
       const finalPickupDate =
         pickup_date !== undefined
           ? pickup_date
-          : null;
+          : request.pickup_date || null;
 
       const finalPickupTime =
         pickup_time !== undefined
           ? pickup_time
-          : null;
+          : request.pickup_time || null;
 
       const finalInstructions =
         collection_instructions !== undefined
           ? collection_instructions
-          : null;
+          : request.collection_instructions || null;
 
       const finalPickupStatus =
         pickup_status ||
